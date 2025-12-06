@@ -1,0 +1,85 @@
+import cv2
+from ultralytics import YOLO
+
+
+class PeopleCounter:
+    """
+    Simple people-counting class using a pretrained YOLOv8 model.
+
+    - model_path: YOLO model weights (e.g. 'yolov8n.pt', 'yolov8s.pt')
+    - conf_threshold: minimum confidence to accept a detection as a person
+    """
+
+    def __init__(self, model_path: str = "yolov8n.pt", conf_threshold: float = 0.5):
+        self.model = YOLO(model_path)
+        self.conf_threshold = conf_threshold
+        # In COCO dataset, class 0 is "person"
+        self.PERSON_CLASS_ID = 0
+
+    def count_people(self, frame, draw: bool = True):
+        """
+        Count people in a BGR frame (OpenCV image).
+
+        Args:
+            frame: numpy array (H, W, 3) in BGR format
+            draw: whether to draw boxes and labels on the frame
+
+        Returns:
+            annotated_frame: frame with optional drawings
+            people_count: integer number of detected people
+        """
+
+        # Run inference (no printing)
+        results = self.model(frame, verbose=False)[0]
+
+        people_count = 0
+        annotated = frame.copy()
+
+        for box in results.boxes:
+            cls_id = int(box.cls[0])
+            conf = float(box.conf[0])
+
+            # Filter only "person" class with sufficient confidence
+            if cls_id == self.PERSON_CLASS_ID and conf >= self.conf_threshold:
+                people_count += 1
+
+                if draw:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    label = f"Person {conf:.2f}"
+                    cv2.putText(
+                        annotated,
+                        label,
+                        (x1, max(y1 - 10, 0)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0, 255, 0),
+                        2,
+                        cv2.LINE_AA,
+                    )
+
+        # Add total count banner on top
+        cv2.rectangle(annotated, (0, 0), (260, 40), (0, 0, 0), -1)
+        cv2.putText(
+            annotated,
+            f"People Count: {people_count}",
+            (10, 27),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+
+        return annotated, people_count
+
+    def count_image_file(self, image_path: str, draw: bool = True):
+        """
+        Convenience method: read an image from disk, count people, and return
+        annotated image and count.
+        """
+        image = cv2.imread(image_path)
+        if image is None:
+            raise FileNotFoundError(f"Could not read image: {image_path}")
+
+        return self.count_people(image, draw=draw)
